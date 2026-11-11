@@ -158,7 +158,7 @@
     <div class="legend">
       <span>☀️ sun · ⛅ partly cloudy · ☁️ overcast · 🌫 fog · 🌧 rain · 🌨 snow · ⛈ thunder</span>
       <span>🟢 Good for football (no rain, 5–28 °C, wind &lt; 30 km/h) · 🟡 So-so · 🔴 Extreme (heavy rain/snow/thunder, wind ≥ 50 km/h, temp ≤ 0 or ≥ 33 °C)</span>
-      <span>Stadium coordinates from the league's Wikipedia season page (club → stadium → town), with Wikidata, TheSportsDB and OpenStreetMap as fallbacks; if only the town is known the weather is taken for the town; weather from Open-Meteo at kickoff – all keyless APIs.</span>
+      <span>Club leagues: stadium coordinates from the league's Wikipedia season page (club → stadium → town), with Wikidata, TheSportsDB and OpenStreetMap as fallbacks. National teams: the venue of each match is read from ESPN (so a changed stadium is picked up automatically) and located with OpenStreetMap. Weather from Open-Meteo at kickoff – all keyless APIs.</span>
     </div>
   </div>
 
@@ -368,7 +368,7 @@ function pcaFit(X,target){
   model.scores=Z.map(z=>model.vecs.map(v=>v.reduce((s,w,j)=>s+w*z[j],0)));
   return model;
 }
-function pcaProject(m,x){const z=x.map((v,j)=>(v-mu[j])/m.sd[j]);return m.vecs.map(v=>v.reduce((s,w,j)=>s+w*z[j],0));}
+function pcaProject(m,x){const z=x.map((v,j)=>(v-m.mu[j])/m.sd[j]);return m.vecs.map(v=>v.reduce((s,w,j)=>s+w*z[j],0));}
 function knnVote(scores,lab,q,K,mode){
   const d=scores.map((r,i)=>[Math.sqrt(r.reduce((s,v,j)=>s+(v-q[j])**2,0)),i]).sort((a,b)=>a[0]-b[0]).slice(0,K);
   // score of each neighbour: +1 (1), 0 (X), -1 (2); weighted average = sum(w*score)/sum(w)
@@ -1574,8 +1574,7 @@ $('demo').onclick=()=>{
   setStatus(m);
 })();
 </script>
-<!-- ===== ADD-ON: εθνικές ομάδες + επιλογή 1/X/2 με ιστόγραμμα & value bet =====
-     Επικόλλησέ το ΑΚΡΙΒΩΣ πριν το </body> του υπάρχοντος αρχείου (μετά το τελευταίο </script>). -->
+<!-- ===== ADD-ON: εθνικές ομάδες + επιλογή 1/X/2 με ιστόγραμμα & value bet ===== -->
 <script>
 (function(){
 /* ---------- 1) NATIONAL TEAM COMPETITIONS (ESPN) ---------- */
@@ -1600,7 +1599,7 @@ const og=document.createElement('optgroup');og.label='National teams (ESPN)';
 NTS.forEach(([k,n,c])=>{ESPN[k]=c;CUPS.add(k);CAL.add(k);   // CAL: calendar-year window (international fixtures are not Sep–Jun)
   const o=document.createElement('option');o.value=k;o.textContent=n;og.appendChild(o);});
 sel.appendChild(og);
-// national teams play on neutral/varied grounds, the stadium map makes no sense for them
+// national teams play on neutral/varied grounds, the club stadium map makes no sense for them (add-on 5 draws the map from ESPN venues)
 const _showMap=showMap;
 showMap=function(f){ if(NTSET.has(document.getElementById('league').value)){document.getElementById('mapCard').hidden=true;return;} return _showMap(f); };
 
@@ -1834,7 +1833,7 @@ espnRange=async function(slug,from,to,ttl){
   const ev=await _er.call(this,slug,from,to,ttl);
   return (NL&&slug==='uefa.nations')?ev.filter(m=>NL.tier.has(nk(m.home))&&NL.tier.has(nk(m.away))):ev;   // history = the whole league (A, B, C or D)
 };
-const _sm=showMap;showMap=function(f){if(NLKEY.test(lg.value)){document.getElementById('mapCard').hidden=true;return;}return _sm(f);};   // national teams: no stadium map
+const _sm=showMap;showMap=function(f){if(NLKEY.test(lg.value)){document.getElementById('mapCard').hidden=true;return;}return _sm(f);};   // national teams: club stadium map not used (add-on 5 draws the map from ESPN venues)
 const _st=standings;standings=function(p){return _st(NL?p.filter(inG):p);};
 const _ss=setupScore;setupScore=function(p,t){return _ss(NL?p.filter(inG):p,t);};
 const _ak=analyseKNN;analyseKNN=function(f,...r){return _ak(NL?f.filter(x=>inG({home:x.HomeTeam,away:x.AwayTeam})):f,...r);};
@@ -1987,6 +1986,143 @@ plotSelect=function(p){
     document.getElementById('dotInfo').insertAdjacentHTML('beforeend','<div class="note" style="margin-top:12px"><b>Histogram – how the '+n+' nearest past games ended</b></div><div class="hg2">'+
       [0,1,2].map(r=>`<div class="c"><div class="t">${cnt[r]}${n?' · '+(100*cnt[r]/n).toFixed(0)+'%':''}</div><i style="height:${(cnt[r]/mx*110).toFixed(1)}px;background:${col[r]}"></i><div class="l">${['1','X','2'][r]}</div></div>`).join('')+'</div>');
   }
+};
+})();
+</script>
+
+<!-- ===== ADD-ON 5: stadium map for national teams (venue taken from ESPN per match, so changed stadiums are picked up automatically) ===== -->
+<script>
+(function(){
+const NTK=/^(WCQ[A-Z]|EUQ|FRI|WC|EURO|COPA|GOLD|AFCON|ASIA|UNL_[A-D]\d)$/;
+const prevShow=showMap;
+let RUN=0;
+const addDays=(d,n)=>new Date(d.getTime()+n*864e5);
+
+// venue (name + city) of every match, read from the ESPN scoreboard of the days around the fixtures
+async function venuesFor(slug,fixtures){
+  const days=new Set();
+  fixtures.forEach(f=>[-1,0,1].forEach(n=>days.add(ymd(addDays(f.date,n)))));
+  const out={};
+  for(const d of days){
+    try{
+      const j=JSON.parse(await espnGet('https://site.api.espn.com/apis/site/v2/sports/soccer/'+slug+'/scoreboard?dates='+d));
+      for(const ev of j.events||[]){
+        const c=(ev.competitions||[])[0]||{},v=c.venue,cp=c.competitors||[];
+        const h=cp.find(x=>x.homeAway==='home'),a=cp.find(x=>x.homeAway==='away');
+        if(h&&a&&h.team&&a.team&&v&&v.fullName)
+          out[(h.team.displayName||h.team.name)+'|'+(a.team.displayName||a.team.name)]=
+            {name:v.fullName,city:v.address&&v.address.city,country:v.address&&v.address.country};
+      }
+    }catch(e){}
+  }
+  return out;
+}
+
+// coordinates of a venue: OpenStreetMap stadium first, then the city
+async function geoVenue(v){
+  const key='ntv1:'+v.name+'|'+(v.city||''),hit=cacheGet(key,Infinity);
+  if(hit)return hit;
+  const base='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=';
+  const ok=x=>isFinite(+x.lat)&&isFinite(+x.lon);
+  for(const q of [[v.name,v.city].filter(Boolean).join(', '),v.name]){
+    await nomPace();
+    try{
+      const j=await jfetch(base+encodeURIComponent(q));
+      const b=(j||[]).find(x=>ok(x)&&VENUE.test(String(x.category||'')+' '+String(x.type||'')));
+      if(b){const r={lat:+b.lat,lon:+b.lon,name:v.name,src:'ESPN venue + OpenStreetMap'};cacheSet(key,r);return r;}
+    }catch(e){}
+  }
+  if(v.city){                                   // stadium unknown to OSM: use the city
+    await nomPace();
+    try{
+      const j=await jfetch(base+encodeURIComponent(v.city+(v.country?', '+v.country:'')));
+      const b=(j||[]).find(x=>ok(x)&&/place|boundary/i.test(x.category||''))||(j||[]).find(ok);
+      if(b){const r={lat:+b.lat,lon:+b.lon,name:v.name+' ('+v.city+' – exact stadium not found)',city:true,src:'ESPN venue + OpenStreetMap city'};cacheSet(key,r);return r;}
+    }catch(e){}
+  }
+  return null;
+}
+
+showMap=async function(fixtures){
+  const lg=document.getElementById('league').value;
+  if(!NTK.test(lg))return prevShow(fixtures);
+  const run=++RUN,stat=document.getElementById('mapStatus'),card=document.getElementById('mapCard');
+  if(!fixtures||!fixtures.length){card.hidden=true;return;}
+  card.hidden=false;
+  if(!window.L){stat.textContent='Leaflet (the map library) could not be loaded – check your internet connection or ad-blocker.';return;}
+  if(!MAP){
+    MAP=L.map('map');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(MAP);
+    MGROUP=L.layerGroup().addTo(MAP);MAP.setView([50,10],4);
+  }
+  MGROUP.clearLayers();
+  const old=document.getElementById('mapWhy');if(old)old.innerHTML='';
+  stat.textContent='Reading the venue of each match from ESPN…';
+  let ven={};
+  try{ven=await venuesFor(await espnSlug(lg),fixtures);}catch(e){}
+  if(run!==RUN)return;
+  const pts=[],missing=[];let done=0;
+  for(const f of fixtures){                       // sequential: Nominatim allows 1 request/second
+    const v=ven[f.HomeTeam+'|'+f.AwayTeam];
+    if(!v){missing.push(f.HomeTeam+' – '+f.AwayTeam+': ESPN lists no venue yet');continue;}
+    stat.textContent='Locating stadiums… '+(++done)+' / '+fixtures.length;
+    const c=await geoVenue(v);
+    if(run!==RUN)return;
+    if(!c){missing.push(f.HomeTeam+' – '+f.AwayTeam+': "'+v.name+'" not found on OpenStreetMap');continue;}
+    let wx=null,err='';
+    try{wx=await wxAt(c.lat,c.lon,f.date);}catch(e){try{wx=await wxAt(c.lat,c.lon,f.date);}catch(e2){err=e2.message;}}
+    const ll=[c.lat,c.lon];pts.push(ll);
+    L.circleMarker(ll,{radius:9,color:'#fff',weight:2,fillColor:COND[playCond(wx)].bg,fillOpacity:0.95})
+      .bindPopup(wxPopup(f,c,wx,err)+'<br><span class="note">'+esc(c.src)+'</span>',{maxWidth:300})
+      .bindTooltip(esc(f.HomeTeam)+' – '+esc(f.AwayTeam)+'<br>'+esc(v.name)+(wx&&wx.t!=null?' · '+wxEmoji(wx.c)+' '+wx.t.toFixed(0)+'°C':''),{direction:'top',offset:[0,-6]})
+      .addTo(MGROUP);
+  }
+  if(run!==RUN)return;
+  stat.textContent=pts.length+' of '+fixtures.length+' game(s) on the map · venue from ESPN, so a changed stadium is picked up automatically · click a dot for the weather';
+  if(pts.length)MAP.fitBounds(L.latLngBounds(pts).pad(0.25));
+  let box=document.getElementById('mapWhy');
+  if(!box){box=document.createElement('div');box.id='mapWhy';box.className='status';stat.after(box);}
+  box.innerHTML=missing.length?'<details open><summary><b>'+missing.length+' game(s) without a marker</b></summary><ul>'+missing.map(m=>'<li>'+esc(m)+'</li>').join('')+'</ul></details>':'';
+};
+})();
+</script>
+
+<!-- ===== ADD-ON 6: download all games (results + odds) of the loaded championship as CSV ===== -->
+<script>
+(function(){
+let CUR=[],PAST=[],FIX=[],TITLE='';
+const _ss=setupScore;                                   // this season: every finished game
+setupScore=function(p,t){CUR=p.slice();TITLE=document.getElementById('league').selectedOptions[0].textContent;return _ss(p,t);};
+const _ak=analyseKNN;                                   // both seasons (games that have odds) + upcoming fixtures
+analyseKNN=function(f,past,...r){PAST=past.slice();FIX=f.slice();return _ak(f,past,...r);};
+
+const sel=document.createElement('select');sel.id='dlScope';
+sel.innerHTML='<option value="cur">This season only</option><option value="both">Last + this season</option>';
+const btn=document.createElement('button');btn.id='dlAll';btn.textContent='Download all games CSV';
+btn.title='Results and odds (1 / X / 2) of every game of the loaded championship';
+document.getElementById('svClear').after(' ',sel,' ',btn);
+
+const q=v=>{v=String(v==null?'':v);return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+const d2=n=>String(n).padStart(2,'0');
+const key=m=>m.home+'|'+m.away+'|'+Math.floor(+m.date/864e5);
+btn.onclick=()=>{
+  if(!CUR.length&&!PAST.length){setStatus('Load a championship first (Load & analyse), then download.');return;}
+  const both=sel.value==='both',curKeys=new Set(CUR.map(key)),rows=new Map();
+  if(both)PAST.forEach(m=>rows.set(key(m),{m,season:curKeys.has(key(m))?'this':'last'}));
+  CUR.forEach(m=>{const k=key(m);const old=rows.get(k);rows.set(k,{m:(old&&!m.o)?{...m,o:old.m.o}:m,season:'this'});});
+  const list=[...rows.values()].sort((a,b)=>a.m.date-b.m.date);
+  let csv='season,date,time,home,away,home_goals,away_goals,result,odd_1,odd_X,odd_2,played\n';
+  for(const {m,season} of list){
+    const d=m.date,res=m.hg>m.ag?'1':m.hg<m.ag?'2':'X',o=m.o||['','',''];
+    csv+=[season,d.getFullYear()+'-'+d2(d.getMonth()+1)+'-'+d2(d.getDate()),d2(d.getHours())+':'+d2(d.getMinutes()),m.home,m.away,m.hg,m.ag,res,
+      o[0]===''?'':(+o[0]).toFixed(2),o[1]===''?'':(+o[1]).toFixed(2),o[2]===''?'':(+o[2]).toFixed(2),1].map(q).join(',')+'\n';
+  }
+  FIX.forEach(f=>{const d=f.date;
+    csv+=['upcoming',d.getFullYear()+'-'+d2(d.getMonth()+1)+'-'+d2(d.getDate()),d2(d.getHours())+':'+d2(d.getMinutes()),f.HomeTeam,f.AwayTeam,'','','',f.B365H,f.B365D,f.B365A,0].map(q).join(',')+'\n';});
+  const name=(TITLE||'championship').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'')+'_'+(both?'2_seasons':'season')+'.csv';
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setStatus(document.getElementById('status').textContent.split('\n')[0]+'\nDownloaded '+name+' ('+list.length+' played games'+(FIX.length?' + '+FIX.length+' upcoming':'')+').');
 };
 })();
 </script>
