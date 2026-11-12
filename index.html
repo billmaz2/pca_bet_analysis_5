@@ -1591,6 +1591,7 @@ const NTS=[
  ['COPA','Copa América',['conmebol.america']],
  ['GOLD','CONCACAF Gold Cup',['concacaf.gold']],
  ['AFCON','Africa Cup of Nations',['caf.nations']],
+ ['AFCONQ','Africa Cup of Nations qualifiers',['caf.nations_qual','caf.nations.qual','caf.afcon.qual','caf.nations_qualifying']],
  ['ASIA','AFC Asian Cup',['afc.asian.cup']]
 ];
 const NTSET=new Set(NTS.map(x=>x[0]));
@@ -1993,7 +1994,7 @@ plotSelect=function(p){
 <!-- ===== ADD-ON 5: stadium map for national teams (venue taken from ESPN per match, so changed stadiums are picked up automatically) ===== -->
 <script>
 (function(){
-const NTK=/^(WCQ[A-Z]|EUQ|FRI|WC|EURO|COPA|GOLD|AFCON|ASIA|UNL_[A-D]\d)$/;
+const NTK=/^(WCQ[A-Z]|EUQ|FRI|WC|EURO|COPA|GOLD|AFCONQ?|ASIA|UNL_[A-D]\d)$/;
 const prevShow=showMap;
 let RUN=0;
 const addDays=(d,n)=>new Date(d.getTime()+n*864e5);
