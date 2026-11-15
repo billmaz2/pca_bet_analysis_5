@@ -1108,10 +1108,6 @@ function short(t){return t.length>9?t.slice(0,8)+'.':t;}
 
 /* =====================================================================
    STADIUM MAP (OpenStreetMap) + KICKOFF WEATHER (Open-Meteo, no API key)
-   - stadium coordinates: OpenStreetMap Nominatim geocoder, queried once
-     per home team (cached forever in localStorage, max 1 req/second)
-   - weather: Open-Meteo hourly (forecast endpoint for upcoming games,
-     archive endpoint for past ones), sampled at kickoff time
    ===================================================================== */
 let MAP=null,MGROUP=null,MAPRUN=0;
 const wxEmoji=c=>c===0?'☀️':c===1?'🌤️':c===2?'⛅':c===3?'☁️':c===45||c===48?'🌫️':(c>=51&&c<=67)||(c>=80&&c<=82)?'🌧️':(c>=71&&c<=77)?'🌨️':(c>=95&&c<=99)?'⛈️':'🌡️';
@@ -1125,49 +1121,35 @@ function nomPace(){ // queue: one real Nominatim request per 1.1 s even when sev
   const p=NOM_Q.then(()=>new Promise(r=>setTimeout(r,Math.max(0,1100-(Date.now()-NOM_LAST))))).then(()=>{NOM_LAST=Date.now();});
   NOM_Q=p;return p;
 }
-/* clubs whose name is a nickname, not a place -> their home city (used only as a
-   last-resort fallback when neither the stadium nor the team name can be geocoded) */
+/* clubs whose name is a nickname, not a place -> their home city (last-resort fallback) */
 const TEAMCITY={
-  // italy
   'salernitana':'Salerno','sampdoria':'Genova','juve stabia':'Castellammare di Stabia','virtus entella':'Chiavari','entella':'Chiavari','reggiana':'Reggio Emilia','sudtirol':'Bolzano','carrarese':'Carrara',
   'juventus':'Torino','inter':'Milano','atalanta':'Bergamo','lazio':'Roma','roma':'Roma','fiorentina':'Firenze','udinese':'Udine','cittadella':'Cittadella','ternana':'Terni','spezia':'La Spezia',
-  // england
   'arsenal':'London','chelsea':'London','tottenham':'London','everton':'Liverpool','west ham':'London','crystal palace':'London','brighton':'Brighton','wolves':'Wolverhampton','brentford':'London','fulham':'London','luton':'Luton',
-  // spain
   'ath madrid':'Madrid','vallecano':'Madrid','barcelona':'Barcelona','espanyol':'Barcelona','betis':'Sevilla','osasuna':'Pamplona','real sociedad':'San Sebastián','alaves':'Vitoria-Gasteiz','celta':'Vigo','mallorca':'Palma','levante':'Valencia','ath bilbao':'Bilbao',
-  // germany
   'bayern munich':'München','borussia dortmund':'Dortmund','m gladbach':'Mönchengladbach','ein frankfurt':'Frankfurt am Main','koln':'Köln','dusseldorf':'Düsseldorf','st pauli':'Hamburg','werder bremen':'Bremen',
-  // france
   'paris sg':'Paris','montpellier':'Montpellier','lorient':'Lorient',
-  // netherlands
   'ajax':'Amsterdam','psv':'Eindhoven','feyenoord':'Rotterdam','sparta rotterdam':'Rotterdam','az alkmaar':'Alkmaar','twente':'Enschede','nec':'Nijmegen','go ahead eagles':'Deventer','fortuna sittard':'Sittard','pec zwolle':'Zwolle','willem ii':'Tilburg','heracles':'Almelo',
-  // portugal
   'benfica':'Lisboa','sporting cp':'Lisboa','sporting':'Lisboa','casa pia':'Lisboa','boavista':'Porto','rio ave':'Vila do Conde','gil vicente':'Barcelos','farense':'Faro','moreirense':'Guimarães','estoril':'Estoril',
-  // belgium
   'anderlecht':'Brussel','club brugge':'Brugge','cercle brugge':'Brugge','standard liege':'Liège','st liege':'Liège','beerschot':'Antwerpen','oh leuven':'Leuven','zulte waregem':'Waregem','sint truiden':'Sint-Truiden','kaa gent':'Gent',
-  // turkey
   'galatasaray':'İstanbul','fenerbahce':'İstanbul','besiktas':'İstanbul','basaksehir':'İstanbul','kasimpasa':'İstanbul','trabzonspor':'Trabzon','rizespor':'Rize','konyaspor':'Konya','antalyaspor':'Antalya','sivasspor':'Sivas','kayserispor':'Kayseri','alanyaspor':'Alanya',
-  // greece
   'olympiacos':'Pireas','panathinaikos':'Athens','aek athens':'Athens','paok':'Thessaloniki','aris':'Thessaloniki','iraklis':'Thessaloniki','ofi crete':'Heraklion','asteras tripoli':'Tripoli','atromitos':'Athens','panetolikos':'Agrinio','levadiakos':'Livadeia','kifisia':'Kifisia','pas giannina':'Ioannina','volos':'Volos','lamia':'Lamia','xanthi':'Xanthi','aegaleo':'Aigaleo','ionikos':'Nikaia','panachaiki':'Patra','kalamata':'Kalamata',
-  // scotland
   'celtic':'Glasgow','rangers':'Glasgow','hearts':'Edinburgh','hibernian':'Edinburgh','st mirren':'Paisley','ross county':'Dingwall','dundee united':'Dundee','queen south':'Dumfries','partick':'Glasgow',
-  // england lower
   'nott m forest':'Nottingham','man united':'Manchester','man city':'Manchester','sheffield weds':'Sheffield','west brom':'West Bromwich','qpr':'London','leicester':'Leicester','ipswich':'Ipswich','southampton':'Southampton','norwich':'Norwich','watford':'Watford','hull city':'Kingston upon Hull','stoke':'Stoke-on-Trent','blackburn':'Blackburn','preston':'Preston','swansea':'Swansea','cardiff':'Cardiff','wigan':'Wigan','bolton':'Bolton','charlton':'London','millwall':'London','birmingham':'Birmingham','coventry':'Coventry','bristol city':'Bristol','sheffield united':'Sheffield','sunderland':'Sunderland','middlesbrough':'Middlesbrough','burnley':'Burnley','leeds':'Leeds','portsmouth':'Portsmouth','plymouth':'Plymouth','luton town':'Luton','derby':'Derby','barnsley':'Barnsley','doncaster':'Doncaster','blackpool':'Blackpool','fleetwood':'Fleetwood','wigan athletic':'Wigan','shrewsbury':'Shrewsbury','lincoln':'Lincoln','peterborough':'Peterborough','mk dons':'Milton Keynes','reading':'Reading','oxford united':'Oxford','wycombe':'High Wycombe','orient':'London','bromley':'Bromley','wimbledon':'London','charlton athletic':'London','burton':'Burton upon Trent','crewe':'Crewe','grimsby':'Grimsby','stockport':'Stockport','mansfield':'Mansfield','hartlepool':'Hartlepool','barrow':'Barrow','rochdale':'Rochdale','salford':'Salford','accrington':'Accrington','bradford':'Bradford','exeter':'Exeter','cheltenham':'Cheltenham','cambridge':'Cambridge','port vale':'Burslem','colchester':'Colchester','gillingham':'Gillingham','stevenage':'Stevenage','harrogate':'Harrogate','newport':'Newport','sutton':'London','crawley':'Crawley','walsall':'Walsall','leyton orient':'London','northampton':'Northampton','bristol rovers':'Bristol','carlisle':'Carlisle','tranmere':'Birkenhead','morecambe':'Morecambe','sutton united':'London'
 };
 async function geoStadiumOSM(team,cc,noCity){
-  const key='stadium4:'+normName(team);          // v4: retry everything previously given up on, with the TEAMCITY table
+  const key='stadium4:'+normName(team);
   const hit=cacheGet(key,Infinity);
-  if(hit&&!(noCity&&hit.city))return hit;                    // cached coordinates (or cached failure)
+  if(hit&&!(noCity&&hit.city))return hit;
   if(hit===0)return null;
   const queries=[team+' stadium',team+' football stadium',team+' arena'];
   for(const q of queries){
-    await nomPace();                    // Nominatim usage policy: max 1 request/second
+    await nomPace();
     try{
       const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1'
         +(cc?'&countrycodes='+cc:'')+'&q='+encodeURIComponent(q));
       if(!r.ok)throw new Error('HTTP '+r.status);
       const j=await r.json();
-      // accept only a result OSM classifies as a sports venue inside the right country
       const best=(j||[]).find(x=>VENUE.test(String(x.category||'')+' '+String(x.type||''))
         &&(!cc||!x.address||String(x.address.country_code||'').toLowerCase()===cc));
       if(best&&isFinite(+best.lat)&&isFinite(+best.lon)){
@@ -1176,9 +1158,7 @@ async function geoStadiumOSM(team,cc,noCity){
       }
     }catch(e){}
   }
-  if(noCity)return null;               // the town is now found from Wikipedia/Wikidata data instead (geoTown)
-  // last resort: no stadium found -> geocode the team's home city
-  // (nickname clubs like "Salernitana" or "Sampdoria" are looked up in TEAMCITY first)
+  if(noCity)return null;
   const cityQ=TEAMCITY[normName(team)],tries=cityQ?[cityQ,team]:[team];
   for(const q of tries){
     await nomPace();
@@ -1199,13 +1179,9 @@ async function geoStadiumOSM(team,cc,noCity){
 }
 
 /* =====================================================================
-   STADIUM LOOKUP (does not depend on the town being in the club name)
-   1) Wikidata: search the club, read its "home venue" (P115) and the venue's coordinates (P625)
-   2) TheSportsDB: club -> stadium name, then OpenStreetMap finds that stadium name
-   3) OpenStreetMap by club name (old method)   4) home city from the TEAMCITY table
+   STADIUM LOOKUP
    ===================================================================== */
 const QC={gb:['Q145','Q21','Q22','Q25','Q26'],es:['Q29'],it:['Q38'],de:['Q183'],fr:['Q142'],nl:['Q55'],be:['Q31'],pt:['Q45'],tr:['Q43'],gr:['Q41'],se:['Q34'],no:['Q20'],fi:['Q33'],hu:['Q28'],cz:['Q213']};
-/* football-data short names -> full club names (only used to widen the Wikidata search) */
 const SHORTNAME={'man united':'Manchester United','man city':'Manchester City','nott m forest':'Nottingham Forest','tottenham':'Tottenham Hotspur','newcastle':'Newcastle United','west ham':'West Ham United','leeds':'Leeds United','wolves':'Wolverhampton Wanderers','brighton':'Brighton & Hove Albion','sheffield weds':'Sheffield Wednesday','west brom':'West Bromwich Albion','qpr':'Queens Park Rangers','ath madrid':'Atlético Madrid','ath bilbao':'Athletic Bilbao','sociedad':'Real Sociedad','vallecano':'Rayo Vallecano','betis':'Real Betis','celta':'Celta Vigo','alaves':'Deportivo Alavés','espanol':'Espanyol','m gladbach':'Borussia Mönchengladbach','ein frankfurt':'Eintracht Frankfurt','paris sg':'Paris Saint-Germain','st etienne':'AS Saint-Étienne','inter':'Inter Milan','milan':'AC Milan','verona':'Hellas Verona','hertha':'Hertha BSC','koln':'1. FC Köln','nurnberg':'1. FC Nürnberg','hamburg':'Hamburger SV','dusseldorf':'Fortuna Düsseldorf','st pauli':'FC St. Pauli','sp lisbon':'Sporting CP','sp braga':'S.C. Braga','guimaraes':'Vitória de Guimarães','aek':'AEK Athens','olympiakos':'Olympiacos','psv':'PSV Eindhoven','az':'AZ Alkmaar','nec':'NEC Nijmegen'};
 async function jfetch(url,ms){
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),ms||12000);
@@ -1234,7 +1210,7 @@ async function wdClubRaw(team,cc){
   let best=null,bs=0;
   for(const id of ids){
     const e=ents[id];if(!e||!e.claims)continue;
-    const hasWhere=(e.claims.P115||[]).length||(e.claims.P159||[]).length||(e.claims.P131||[]).length;    // home venue, headquarters or location
+    const hasWhere=(e.claims.P115||[]).length||(e.claims.P159||[]).length||(e.claims.P131||[]).length;
     if(!hasWhere)continue;
     const label=(e.labels&&e.labels.en&&e.labels.en.value)||'',desc=(e.descriptions&&e.descriptions.en&&e.descriptions.en.value)||'';
     if(!(claimIds(e,'P31').includes('Q476028')||/football|soccer/i.test(desc)))continue;
@@ -1262,7 +1238,6 @@ async function geoWikidata(team,cc,why){
   why.push('Wikidata: club found, but '+(c.hasVenue?'its home venue has no coordinates':'it lists no home venue'));
   return null;
 }
-/* town names stored on Wikidata: the stadium's "located in" (P131), the club's headquarters (P159) and the club's own location (P131) */
 async function wdTowns(team,cc){
   const c=await wdClub(team,cc);if(!c||c.err)return [];
   const ids=[...new Set([...c.venues.flatMap(v=>v.loc||[]),...c.hq,...c.cloc])];
@@ -1294,7 +1269,7 @@ const WIKI={E0:'Premier League',E1:'EFL Championship',E2:'EFL League One',E3:'EF
   I1:'Serie A',I2:'Serie B',D1:'Bundesliga',D2:'2. Bundesliga',F1:'Ligue 1',F2:'Ligue 2',N1:'Eredivisie',B1:'Belgian Pro League',P1:'Primeira Liga',
   T1:'Süper Lig',G1:'Super League Greece',SC0:'Scottish Premiership',SC1:'Scottish Championship',SWE:'Allsvenskan',NOR:'Eliteserien',
   FIN:'Veikkausliiga',HUN:'Nemzeti Bajnokság I',CZE:'Czech First League'};
-const wn=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ')
+const wn=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\[[^\]]*\]/g,' ').replace(/[^a-z0-9]+/g,' ')
   .replace(/\b(fc|afc|cf|sc|ac|as|ssc|fk|if|bk|sk|ik|fotboll|football|club|calcio|de|the|1|sv|vfb|vfl|tsg|rb|ud|cd|sd|rc|rcd|ca|us|ss)\b/g,' ').replace(/\s+/g,' ').trim();
 const WIKI_MEM={},WIKI_ERR={},GEO_WHY={};
 async function wikiSeasonRows(lg){
@@ -1305,7 +1280,7 @@ async function wikiSeasonRows(lg){
     const season=cal?String(y):y+'–'+String((y+1)%100).padStart(2,'0'),key='wikirows:'+lg+':'+season,hit=cacheGet(key,14*864e5);
     if(hit)return hit;
     let rows=[];
-    for(const sea of [season,cal?String(y-1):(y-1)+'–'+String(y%100).padStart(2,'0')]){      // this season, else last season's page
+    for(const sea of [season,cal?String(y-1):(y-1)+'–'+String(y%100).padStart(2,'0')]){
       let html=null;
       try{const j=await jfetch('https://en.wikipedia.org/w/api.php?action=parse&format=json&origin=*&redirects=1&prop=text&disableeditsection=1&page='+encodeURIComponent(sea+' '+WIKI[lg]),20000);html=j&&j.parse&&j.parse.text&&j.parse.text['*'];
         if(!html)WIKI_ERR[lg]='Wikipedia has no page called "'+sea+' '+WIKI[lg]+'"';}
@@ -1316,7 +1291,6 @@ async function wikiSeasonRows(lg){
     }
     if(!rows.length)return null;
     delete WIKI_ERR[lg];
-    // coordinates of every stadium article (Wikipedia stores them as page coordinates)
     const titles=[...new Set(rows.map(r=>r.stadiumPage).filter(Boolean))],co={};
     for(let i=0;i<titles.length;i+=40){
       try{
@@ -1338,7 +1312,7 @@ function parseWikiTeams(html){
     const head=[...trs[0].children].map(c=>c.textContent.trim());
     const iT=head.findIndex(h=>/^(team|club|teams|clubs)\b/i.test(h)),iS=head.findIndex(h=>/stadium|ground|venue|arena/i.test(h)),iL=head.findIndex(h=>/location|city|town|home city|^place/i.test(h));
     if(iT<0||iS<0)continue;
-    const carry=[];                                           // rowspan carry-over so merged cells (e.g. "London") reach every row
+    const carry=[];
     for(const tr of trs.slice(1)){
       const cells=[];let ci=0;
       for(const c of tr.children){
@@ -1365,7 +1339,7 @@ function wikiPick(team,rows){
     for(const x of names){
       if(x===w)sc=Math.max(sc,5);
       else if(x.length>=4&&(w.includes(x)||x.includes(w)))sc=Math.max(sc,4);
-      else{                                                      // abbreviations: "ath bilbao", "nott m forest", "sp lisbon"
+      else{
         const xt=x.split(' '),wt=w.split(' ');
         if(xt.length>1&&xt.length<=wt.length&&xt.every((t,i)=>wt[i]&&(wt[i].startsWith(t)||t.startsWith(wt[i]))))sc=Math.max(sc,3);
         else if(xt[0].length>=4&&wt[0]===xt[0])sc=Math.max(sc,2);
@@ -1382,7 +1356,6 @@ async function geoWikiLeague(team,cc,lg,why){
   const r=wikiPick(team,rows);
   if(!r){why.push('Wikipedia: "'+team+'" does not match any club in the season table ('+rows.slice(0,4).map(x=>x.team).join(', ')+'…)');return null;}
   if(isFinite(r.lat)&&isFinite(r.lon))return {lat:r.lat,lon:r.lon,name:r.stadium||'stadium',src:'Wikipedia league page'};
-  // stadium article without coordinates: search the stadium name, then fall back to the town printed in the same row
   for(const q of [r.stadium&&r.place?r.stadium+', '+r.place:'',r.stadium,r.place].filter(Boolean)){
     await nomPace();
     try{
@@ -1396,7 +1369,6 @@ async function geoWikiLeague(team,cc,lg,why){
   why.push('Wikipedia: club found (stadium "'+(r.stadium||'?')+'", town "'+(r.place||'?')+'") but its page has no coordinates and OpenStreetMap does not know the stadium or town');
   return null;
 }
-/* no stadium coordinates anywhere -> find the TOWN of the home team in the data sources, then take that town's OpenStreetMap position */
 async function omGeocode(name,cc){
   const j=await jfetch('https://geocoding-api.open-meteo.com/v1/search?count=10&language=en&format=json&name='+encodeURIComponent(name),12000);
   const rs=((j&&j.results)||[]).filter(x=>isFinite(x.latitude)&&isFinite(x.longitude)&&(!cc||String(x.country_code||'').toLowerCase()===cc));
@@ -1404,14 +1376,14 @@ async function omGeocode(name,cc){
 }
 async function geoTown(team,cc,lg,why){
   const cands=[];
-  try{const rows=WIKI[lg]&&await wikiSeasonRows(lg);const r=rows&&wikiPick(team,rows);                      // 1) Wikipedia league table: town next to the stadium
+  try{const rows=WIKI[lg]&&await wikiSeasonRows(lg);const r=rows&&wikiPick(team,rows);
     if(r&&r.place)r.place.split(/[,;\/(]/).map(x=>x.trim()).filter(Boolean).forEach(x=>cands.push({name:x,from:'Wikipedia league page'}));}catch(e){}
-  try{cands.push(...await wdTowns(team,cc));}catch(e){}                                                       // 2) Wikidata: stadium location, club headquarters
-  const tc=TEAMCITY[normName(team)];if(tc)cands.push({name:tc,from:'built-in club table'});                   // 3) fixed club -> town table
+  try{cands.push(...await wdTowns(team,cc));}catch(e){}
+  const tc=TEAMCITY[normName(team)];if(tc)cands.push({name:tc,from:'built-in club table'});
   const seen=new Set(),list=cands.filter(c=>{const k=wn(c.name);if(!k||seen.has(k))return false;seen.add(k);return true;});
   if(!list.length){why.push('town: no source (Wikipedia table, Wikidata, club table) names a town for this club');return null;}
   for(const c of list){
-    try{                                                                                                         // town position from OpenStreetMap first
+    try{
       await nomPace();
       const j=await jfetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5'+(cc?'&countrycodes='+cc:'')+'&q='+encodeURIComponent(c.name));
       const b=(j||[]).find(x=>isFinite(+x.lat)&&isFinite(+x.lon)&&/place|boundary/i.test(x.category||''))||(j||[]).find(x=>isFinite(+x.lat)&&isFinite(+x.lon));
@@ -1426,22 +1398,22 @@ async function geoTown(team,cc,lg,why){
 async function geoStadium(team,cc,lg){
   const nk=normName(team)+':'+(cc||'')+':'+(lg||''),key='stadium6:'+nk,fkey='stadium9f:'+nk;
   const hit=cacheGet(key,Infinity);if(hit){if(hit.city)GEO_WHY[team]=hit.why||['only the town could be located'];return hit;}
-  const f=cacheGet(fkey,3*864e5);if(f){GEO_WHY[team]=f;return null;}            // failures are retried after 3 days
+  const f=cacheGet(fkey,3*864e5);if(f){GEO_WHY[team]=f;return null;}
   const why=[];let v=null;
   const step=async(fn)=>{if(v)return;try{v=await fn();}catch(e){why.push('network error: '+e.message);}};
-  await step(()=>geoWikiLeague(team,cc,lg,why));                                 // 1) the league's own Wikipedia page
-  await step(()=>geoWikidata(team,cc,why));                                      // 2) Wikidata
+  await step(()=>geoWikiLeague(team,cc,lg,why));
+  await step(()=>geoWikidata(team,cc,why));
   await step(async()=>{const r=await geoSportsDB(team,cc);if(!r)why.push('TheSportsDB: no stadium listed for this club, or OpenStreetMap does not know it');return r;})
   await step(async()=>{const r=await geoStadiumOSM(team,cc,true);if(!r)why.push('OpenStreetMap: no stadium found by club name');return r;})
-  if(!v){const stadiumWhy=why.slice();await step(()=>geoTown(team,cc,lg,why));if(v)v.why=stadiumWhy.concat('→ using the town instead');}   // 5) town of the club
+  if(!v){const stadiumWhy=why.slice();await step(()=>geoTown(team,cc,lg,why));if(v)v.why=stadiumWhy.concat('→ using the town instead');}
   if(v){if(!v.src)v.src='OpenStreetMap'+(v.city?' (city only)':'');if(v.city){v.why=v.why||(why.length?why:['only the town could be located']);GEO_WHY[team]=v.why;}cacheSet(key,v);return v;}
   GEO_WHY[team]=why;cacheSet(fkey,why);return null;
 }
 async function wxAt(lat,lon,dt){
   const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  const past=dt.getTime()<Date.now();   // kickoff already over -> archive API
-  const key='wx:'+lat.toFixed(2)+','+lon.toFixed(2)+':'+Math.floor(dt.getTime()/36e5); // one entry per stadium per hour
-  const hit=cacheGet(key,past?Infinity:2*36e5);   // forecasts refresh every 2 hours
+  const past=dt.getTime()<Date.now();
+  const key='wx:'+lat.toFixed(2)+','+lon.toFixed(2)+':'+Math.floor(dt.getTime()/36e5);
+  const hit=cacheGet(key,past?Infinity:2*36e5);
   if(hit)return hit;
   const base=past?'https://archive-api.open-meteo.com/v1/archive':'https://api.open-meteo.com/v1/forecast';
   const url=base+'?latitude='+lat.toFixed(4)+'&longitude='+lon.toFixed(4)
@@ -1451,7 +1423,6 @@ async function wxAt(lat,lon,dt){
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json(),H=j.hourly;
   if(!H||!H.time)throw new Error('no hourly data');
-  // average of the three hours around kickoff = weather during the game (~2h)
   let best=0,bd=1e15;
   H.time.forEach((t,i)=>{const d=Math.abs(new Date(t+'Z')-dt);if(d<bd){bd=d;best=i;}});
   const idx=[best-1,best,best+1].filter(i=>i>=0&&i<H.time.length);
@@ -1460,7 +1431,7 @@ async function wxAt(lat,lon,dt){
            w:av('wind_speed_10m'),g:av('wind_gusts_10m'),c:H.weather_code?H.weather_code[best]:null};
   cacheSet(key,v);return v;
 }
-function playCond(wx){ // green = good for football, yellow = so-so, red = extreme
+function playCond(wx){
   if(!wx||wx.t==null)return 'grey';
   const snow=(wx.c>=71&&wx.c<=77)||wx.c===85||wx.c===86, thunder=wx.c>=95, fog=wx.c===45||wx.c===48;
   if(thunder||snow||wx.pr>=2.5||wx.w>=50||wx.t>=33||wx.t<=0)return 'red';
@@ -1487,7 +1458,7 @@ function wxPopup(f,c,wx,err){
 async function showMap(fixtures){
   const run=++MAPRUN;
   if(!fixtures||!fixtures.length){$('mapCard').hidden=true;return;}
-  if($('league').value==='DEMO'){$('mapCard').hidden=true;return;}   // synthetic teams have no stadiums
+  if($('league').value==='DEMO'){$('mapCard').hidden=true;return;}
   $('mapCard').hidden=false;
   if(!window.L){$('mapStatus').textContent='Leaflet (the map library) could not be loaded – check your internet connection or ad-blocker.';return;}
   if(!MAP){
@@ -1506,12 +1477,12 @@ async function showMap(fixtures){
   if(run!==MAPRUN)return;
   const pts=[];let done=0,fails=0;const wxErr={};
   $('mapStatus').textContent='Fetching kickoff weather from Open-Meteo…';
-  await Promise.all(fixtures.map(async f=>{          // all weather requests run in parallel
+  await Promise.all(fixtures.map(async f=>{
     const c=coords[f.HomeTeam];
     let wx=null,err='';
     if(c){
       try{wx=await wxAt(c.lat,c.lon,f.date);}
-      catch(e){await new Promise(s=>setTimeout(s,1500));      // one retry – occasional Open-Meteo hiccup
+      catch(e){await new Promise(s=>setTimeout(s,1500));
         try{wx=await wxAt(c.lat,c.lon,f.date);}catch(e2){err=e2.message;}}
     }
     const n=++done;
@@ -1532,7 +1503,6 @@ async function showMap(fixtures){
     +(fails?' · '+fails+' game(s) could not be geocoded':'')
     +' · click a dot for the weather around kickoff';
   if(pts.length)MAP.fitBounds(L.latLngBounds(pts).pad(0.25));
-  // explain every problem: stadiums not found, towns used instead, weather failures
   let box=document.getElementById('mapWhy');
   if(!box){box=document.createElement('div');box.id='mapWhy';box.className='status';$('mapStatus').after(box);}
   const bad=homes.filter(t=>!coords[t]),town=homes.filter(t=>coords[t]&&coords[t].city);
@@ -1597,10 +1567,9 @@ const NTS=[
 const NTSET=new Set(NTS.map(x=>x[0]));
 const sel=document.getElementById('league');
 const og=document.createElement('optgroup');og.label='National teams (ESPN)';
-NTS.forEach(([k,n,c])=>{ESPN[k]=c;CUPS.add(k);CAL.add(k);   // CAL: calendar-year window (international fixtures are not Sep–Jun)
+NTS.forEach(([k,n,c])=>{ESPN[k]=c;CUPS.add(k);CAL.add(k);
   const o=document.createElement('option');o.value=k;o.textContent=n;og.appendChild(o);});
 sel.appendChild(og);
-// national teams play on neutral/varied grounds, the club stadium map makes no sense for them (add-on 5 draws the map from ESPN venues)
 const _showMap=showMap;
 showMap=function(f){ if(NTSET.has(document.getElementById('league').value)){document.getElementById('mapCard').hidden=true;return;} return _showMap(f); };
 
@@ -1634,7 +1603,6 @@ function renderPick(){
   const res=LAST,it=res.items[PK.i],k=PK.k,odd=it.o[k],f=it.fx,L=LET[k];
   const est=res.estHist||f.est,tl=est?'~':'';
   const rows=res.past.map((m,j)=>({m,r:res.lab[j],o:m.o[k]}));
-  // histogram of the odd of the chosen outcome across ALL past games, stacked by real result
   const H=BINS.slice(0,-1).map(()=>[0,0,0]);
   rows.forEach(x=>H[binOf(x.o)][x.r]++);
   const mx=Math.max(1,...H.map(b=>b[0]+b[1]+b[2])),mine=binOf(odd);
@@ -1642,8 +1610,8 @@ function renderPick(){
   const band=rows.filter(x=>x.o>=lo&&x.o<=hi);
   const cnt=[0,0,0];band.forEach(x=>cnt[x.r]++);
   const n=band.length,hits=cnt[k],rate=n?hits/n:0;
-  const flat=n?band.reduce((s,x)=>s+(x.r===k?x.o:0),0)/n-1:0;   // 1 unit on every game of the band at its own odd
-  const roi=rate*odd-1;                                          // at THIS game's odd
+  const flat=n?band.reduce((s,x)=>s+(x.r===k?x.o:0),0)/n-1:0;
+  const roi=rate*odd-1;
   const low=wilsonLow(hits,n);
   let vcls='vb-g',vtxt='Not enough similar games';
   if(n>=5){
@@ -1680,7 +1648,7 @@ function renderPick(){
        [0,1,2].map(r=>b[r]?`<i style="height:${(b[r]/mx*130).toFixed(1)}px;background:${col[r]}"></i>`:'').join('')+'</div>';
   });
   h+='</div><div class="hgl">'+H.map((_,i)=>`<div>${binLab(i)}</div>`).join('')+'</div>';
-  const sorted=band.slice().sort((a,b)=>a.o-b.o||a.m.date-b.m.date);   // distribution from the smallest to the biggest odd
+  const sorted=band.slice().sort((a,b)=>a.o-b.o||a.m.date-b.m.date);
   h+=`<details style="margin-top:12px"${n&&n<=40?' open':''}><summary><b>The ${n} games with a similar odd of ${L}</b> <span class="note">(sorted from the smallest to the biggest odd · click any column title to sort)</span></summary><div class="scroll"><table><tr><th>Date</th><th>Game</th><th>Result</th><th class="n sa">Odd ${L}</th><th class="n">1</th><th class="n">X</th><th class="n">2</th></tr>`+
     sorted.map(({m,r})=>`<tr><td>${m.date.toLocaleDateString('en-GB')}</td><td>${esc(m.home)} ${m.hg}–${m.ag} ${esc(m.away)}</td><td>${pillOf(LET[r])}</td><td class="n"><b>${tl}${m.o[k].toFixed(2)}</b></td><td class="n">${tl}${m.o[0].toFixed(2)}</td><td class="n">${tl}${m.o[1].toFixed(2)}</td><td class="n">${tl}${m.o[2].toFixed(2)}</td></tr>`).join('')+
     '</table></div></details><p class="note">Past results do not guarantee anything; with few games the verdict is unreliable. Gamble responsibly.</p>';
@@ -1688,7 +1656,6 @@ function renderPick(){
   document.getElementById('pkTol').onchange=e=>{PK.tol=+e.target.value;renderPick();};
 }
 
-// add a "Pick" column with 1 / X / 2 buttons to the upcoming-games table after every render
 function enhance(){
   const t=document.getElementById('tbl');if(!t||!t.rows.length)return;
   t.rows[0].insertAdjacentHTML('beforeend','<th>Check a pick</th>');
@@ -1697,7 +1664,6 @@ function enhance(){
     tr.insertAdjacentHTML('beforeend','<td>'+LET.map((l,k)=>`<button class="pk" data-i="${i}" data-k="${k}">${l}</button>`).join('')+'</td>');
   });
 }
-// leaving the current championship (or reloading) must close the pick card
 const closePick=()=>{PK=null;card.hidden=true;};
 document.getElementById('league').addEventListener('change',closePick);
 document.getElementById('go').addEventListener('click',closePick,true);
@@ -1708,7 +1674,7 @@ render=function(res){
 };
 document.getElementById('tbl').addEventListener('click',e=>{
   const b=e.target.closest('button.pk');if(!b)return;
-  e.stopImmediatePropagation();                       // do not trigger the row selection
+  e.stopImmediatePropagation();
   PK={i:+b.dataset.i,k:+b.dataset.k,tol:PK?PK.tol:0.05};
   document.querySelectorAll('#tbl button.pk').forEach(x=>x.classList.toggle('on',x.dataset.i===b.dataset.i&&x.dataset.k===b.dataset.k));
   renderPick();card.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1725,11 +1691,10 @@ const XL=[['ARG','Argentina – Primera División','arg.1','ar'],['AUT','Austria
  ['RUS','Russia – Premier League','rus.1','ru'],['SWE','Sweden – Allsvenskan','swe.1','se'],['SWZ','Switzerland – Super League','sui.1','ch'],['USA','USA – MLS','usa.1','us']];
 const XKEYS=new Set(XL.map(x=>'X_'+x[0]));
 const og=document.createElement('optgroup');og.label='Extra leagues (football-data, Pinnacle odds)';
-XL.forEach(([c,n,slug,cc])=>{ESPN['X_'+c]=[slug];CC['X_'+c]=cc;          // ESPN is only used for the upcoming fixtures
+XL.forEach(([c,n,slug,cc])=>{ESPN['X_'+c]=[slug];CC['X_'+c]=cc;
   const o=document.createElement('option');o.value='X_'+c;o.textContent=n;og.appendChild(o);});
 document.getElementById('league').appendChild(og);
 
-// odds columns in the order of preference: Pinnacle closing, Pinnacle, average closing, average, bet365
 const OSETS=[['PSCH','PSCD','PSCA'],['PH','PD','PA'],['AvgCH','AvgCD','AvgCA'],['AvgH','AvgD','AvgA'],['B365CH','B365CD','B365CA'],['B365H','B365D','B365A']];
 const oddsOf=r=>{for(const s of OSETS){const o=s.map(k=>num(r[k]));if(o.every(v=>v>1))return o;}return null;};
 function toPlayedX(rows){
@@ -1748,7 +1713,6 @@ async function extraGo(key,days){
     const txt=await getCSV('new/'+code+'.csv',v=>setProg(0.02+0.5*v,'Downloading '+title+' from football-data… '+Math.round(v*100)+'%'),30*60e3);
     const all=toPlayedX(parseCSV(txt));
     if(!all.length)throw new Error('The file new/'+code+'.csv was read but no finished games were found (column names may have changed).');
-    // current season = the one with the latest game, previous season = the one before
     const seas={};all.forEach(m=>{const s=seas[m.season]||(seas[m.season]={max:0,list:[]});s.max=Math.max(s.max,+m.date);s.list.push(m);});
     const ord=Object.keys(seas).sort((a,b)=>seas[b].max-seas[a].max);
     const curPlayed=seas[ord[0]].list,prevPlayed=ord[1]?seas[ord[1]].list:[];
@@ -1756,7 +1720,6 @@ async function extraGo(key,days){
     renderStandings(stRows,title);renderMatrix(curPlayed,stRows,title);renderGoals(curPlayed,stRows,title);setupScore(curPlayed,stRows);
     const past=prevPlayed.concat(curPlayed).filter(m=>m.o).sort((a,b)=>a.date-b.date);
     const now=new Date(),day0=new Date(now.getFullYear(),now.getMonth(),now.getDate()),end=new Date(now.getTime()+days*864e5);
-    // football-data has no fixtures for these leagues: upcoming games and their odds come from ESPN
     setProg(0.6,'Downloading upcoming fixtures from ESPN…');
     const fixtures=[];let note='';
     try{
@@ -1797,11 +1760,10 @@ go.onclick=async function(ev){
 <script>
 (function(){
 const TIERS=[['A',4],['B',4],['C',4],['D',2]];
-const nk=s=>{s=String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\[[^\]]*\]/g,'').replace(/\([^)]*\)/g,'').replace(/&/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\band\b/g,' ').replace(/\s+/g,' ').trim();
+const nk=s=>{s=String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\[[^\]]*\]/g,'').replace(/\([^)]*\)/g,'').replace(/&/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\band\b/g,' ').replace(/\s+/g,' ').trim();
   const A={'czechia':'czech republic','turkiye':'turkey','republic of ireland':'ireland','cape verde':'cabo verde'};return A[s]||s;};
 const NLKEY=/^UNL_[A-D]\d$/;
 const lg=document.getElementById('league');
-// the old single "Nations League" entry is replaced by one entry per group
 const old=[...lg.options].find(o=>o.value==='UNL');if(old)old.remove();
 TIERS.forEach(([L,n])=>{
   const og=document.createElement('optgroup');og.label='UEFA Nations League '+L+' (ESPN + Wikipedia groups)';
@@ -1809,7 +1771,7 @@ TIERS.forEach(([L,n])=>{
     const o=document.createElement('option');o.value=k;o.textContent='UEFA Nations League '+L+' – Group '+L+g;og.appendChild(o);}
   lg.insertBefore(og,lg.querySelector('optgroup:last-of-type'));
 });
-let NL=null;                                   // {tier:Set, grp:Set} while a Nations League group is selected
+let NL=null;
 const inG=m=>NL.grp.has(nk(m.home))&&NL.grp.has(nk(m.away));
 const editionStart=()=>{const n=new Date(),y=n.getMonth()>=5?n.getFullYear():n.getFullYear()-1;return y-((((y-2024)%2)+2)%2);};
 async function nlGroups(L){
@@ -1821,20 +1783,19 @@ async function nlGroups(L){
   for(const tb of doc.querySelectorAll('table.wikitable')){
     const trs=[...tb.querySelectorAll('tr')];if(trs.length<4)continue;
     const head=[...trs[0].children].map(c=>c.textContent.trim()),iT=head.findIndex(h=>/^Team/i.test(h));
-    if(iT<0||!head.some(h=>/^Pld/i.test(h))||head.some(h=>/^Grp/i.test(h)))continue;     // standings tables only (not the interim ranking)
+    if(iT<0||!head.some(h=>/^Pld/i.test(h))||head.some(h=>/^Grp/i.test(h)))continue;
     const teams=[];for(const tr of trs.slice(1)){const c=tr.children;if(c.length>iT&&c[iT].textContent.trim())teams.push(c[iT].textContent.trim());}
     if(teams.length>=3&&teams.length<=5)groups.push(teams);
   }
   if(!groups.length)throw new Error('the Wikipedia page "'+title+'" has no group standings tables');
   cacheSet(ck,groups);return groups;
 }
-// ---- wrap the pieces of the cup loader so that it only sees the selected league / group ----
 const _er=espnRange;
 espnRange=async function(slug,from,to,ttl){
   const ev=await _er.call(this,slug,from,to,ttl);
-  return (NL&&slug==='uefa.nations')?ev.filter(m=>NL.tier.has(nk(m.home))&&NL.tier.has(nk(m.away))):ev;   // history = the whole league (A, B, C or D)
+  return (NL&&slug==='uefa.nations')?ev.filter(m=>NL.tier.has(nk(m.home))&&NL.tier.has(nk(m.away))):ev;
 };
-const _sm=showMap;showMap=function(f){if(NLKEY.test(lg.value)){document.getElementById('mapCard').hidden=true;return;}return _sm(f);};   // national teams: club stadium map not used (add-on 5 draws the map from ESPN venues)
+const _sm=showMap;showMap=function(f){if(NLKEY.test(lg.value)){document.getElementById('mapCard').hidden=true;return;}return _sm(f);};
 const _st=standings;standings=function(p){return _st(NL?p.filter(inG):p);};
 const _ss=setupScore;setupScore=function(p,t){return _ss(NL?p.filter(inG):p,t);};
 const _ak=analyseKNN;analyseKNN=function(f,...r){return _ak(NL?f.filter(x=>inG({home:x.HomeTeam,away:x.AwayTeam})):f,...r);};
@@ -1859,8 +1820,7 @@ go.onclick=async function(ev){
 <!-- ===== ADD-ON 4: ESPN data saved in the browser as CSV (incremental updates) + sortable tables + 1/X/2 histogram on dots ===== -->
 <script>
 (function(){
-const FRESH=10*60e3,DAY=864e5;      // saved data younger than 10 minutes is used as it is
-/* ---------- tiny storage layer: IndexedDB, falling back to localStorage ---------- */
+const FRESH=10*60e3,DAY=864e5;
 const DBP=new Promise(res=>{try{const r=indexedDB.open('oddsdata',1);r.onupgradeneeded=()=>r.result.createObjectStore('csv');r.onsuccess=()=>res(r.result);r.onerror=()=>res(null);r.onblocked=()=>res(null);}catch(e){res(null);}});
 const idb=(mode,fn)=>DBP.then(db=>new Promise(res=>{if(!db)return res(undefined);try{const rq=fn(db.transaction('csv',mode).objectStore('csv'));rq.onsuccess=()=>res(rq.result===undefined?null:rq.result);rq.onerror=()=>res(undefined);}catch(e){res(undefined);}}));
 async function dbGet(k){const v=await idb('readonly',s=>s.get(k));if(v!==undefined)return v;try{return JSON.parse(localStorage.getItem('csv:'+k)||'null');}catch(e){return null;}}
@@ -1868,16 +1828,14 @@ async function dbSet(k,v){const r=await idb('readwrite',s=>s.put(v,k));if(r===un
 async function dbKeys(){const r=await idb('readonly',s=>s.getAllKeys());if(Array.isArray(r))return r;const o=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith('csv:'))o.push(k.slice(4));}}catch(e){}return o;}
 async function dbDel(k){await idb('readwrite',s=>s.delete(k));try{localStorage.removeItem('csv:'+k);}catch(e){}}
 
-/* ---------- one CSV per competition ---------- */
 const HDR='id,t,home,away,played,hg,ag,o1,oX,o2,src,oc,oat';
 const q=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
 const toCsv=rows=>HDR+'\n'+rows.map(r=>[r.id,r.t,r.home,r.away,r.played?1:0,r.hg==null?'':r.hg,r.ag==null?'':r.ag,r.o?r.o[0]:'',r.o?r.o[1]:'',r.o?r.o[2]:'',r.src||'',r.oc?1:0,r.oat||''].map(q).join(',')).join('\n');
 const fromCsv=t=>parseCSV(t).map(r=>({id:r.id,t:+r.t,home:r.home,away:r.away,played:r.played==='1',hg:r.hg===''?null:+r.hg,ag:r.ag===''?null:+r.ag,
   o:r.o1?[+r.o1,+r.oX,+r.o2]:null,src:r.src||'',oc:r.oc==='1',oat:+r.oat||0}));
-const nlKeyOf=lg=>{const m=/^UNL_([A-D])\d$/.exec(lg);return m?'UNL_'+m[1]:lg;};   // the 4 groups of one Nations League tier share the data
+const nlKeyOf=lg=>{const m=/^UNL_([A-D])\d$/.exec(lg);return m?'UNL_'+m[1]:lg;};
 window.__stor=null;
 
-/* replaces fetchCup of the main page: same return shape, but data is kept between visits */
 fetchCup=async function(lg,startYear,days,onP){
   const key='espn:'+nlKeyOf(lg),st=await dbGet(key),slug=(st&&st.slug)||await espnSlug(lg),now=new Date(),day0=new Date(now.getFullYear(),now.getMonth(),now.getDate()),end=new Date(now.getTime()+days*DAY);
   const cal=CAL.has(lg),Y=now.getMonth()>=2?now.getFullYear():now.getFullYear()-1;
@@ -1886,9 +1844,9 @@ fetchCup=async function(lg,startYear,days,onP){
   if(st&&st.csv){try{fromCsv(st.csv).forEach(r=>rows.set(r.id,r));meta={from:st.from,to:st.to,updated:st.updated};}catch(e){rows=new Map();meta={from:+prevFrom,to:0,updated:0};}}
   const errs=[];let failed=0,total=0,oerr=0,syncFrom=null;
   const covered=meta.updated>0&&meta.from<=+prevFrom;
-  if(!covered)syncFrom=prevFrom;                                             // first visit: everything
-  else if(Date.now()-meta.updated>=FRESH||+end>meta.to+DAY){                // later visits: only today and the coming days + games still waiting for a result
-    const open=[...rows.values()].filter(r=>!r.played&&r.t<Date.now()).map(r=>r.t);   // played since the last visit, result not stored yet
+  if(!covered)syncFrom=prevFrom;
+  else if(Date.now()-meta.updated>=FRESH||+end>meta.to+DAY){
+    const open=[...rows.values()].filter(r=>!r.played&&r.t<Date.now()).map(r=>r.t);
     syncFrom=new Date(Math.min(+day0,...open));if(syncFrom<prevFrom)syncFrom=prevFrom;
   }
   if(syncFrom)syncFrom=new Date(syncFrom.getFullYear(),syncFrom.getMonth(),syncFrom.getDate());
@@ -1901,10 +1859,9 @@ fetchCup=async function(lg,startYear,days,onP){
         rows.set(e.id,{id:e.id,t:e.t,home:e.home,away:e.away,played:e.played,hg:e.hg,ag:e.ag,o:o?o.o:null,src:o?o.src:'',oc:o?o.oc:false,oat:o?o.oat:0});}}
     catch(e){failed++;errs.push(ymd(s.from)+': '+e.message);}
     onP(0.5*(++done/segs.length),'matches');});
-  if(segs.length&&!failed)for(const [id,r] of rows)                          // postponed / removed games inside the refreshed range
+  if(segs.length&&!failed)for(const [id,r] of rows)
     if(!r.played&&!fetched.has(id)&&r.t>=+syncFrom+DAY&&r.t<=+end-DAY)rows.delete(id);
   for(const [id,r] of rows)if(r.t<+prevFrom)rows.delete(id);
-  // odds: only for games never asked about (finished) and for upcoming games whose odds are older than 30 minutes
   const need=[...rows.values()].filter(r=>r.id&&(r.played?!r.oc:(r.t>=+day0&&r.t<=+end&&(!r.oc||Date.now()-r.oat>30*60e3))));
   let od=0;
   await pool(need,8,async r=>{
@@ -1923,7 +1880,6 @@ fetchCup=async function(lg,startYear,days,onP){
     errs,failed,total,oddsFailed:oerr,oddsTotal:need.length};
 };
 
-/* ---------- buttons: delete saved data / download the CSV of the chosen competition ---------- */
 const anchor=document.getElementById('demo').parentElement;
 const box=document.createElement('div');
 box.innerHTML='<button id="svCsv" title="Download the saved ESPN data of this competition as a CSV file">Saved CSV</button> <button id="svClear" title="Forget everything saved in this browser">Clear saved data</button>';
@@ -1935,7 +1891,6 @@ document.getElementById('svCsv').onclick=async()=>{
   if(!st||!st.csv){setStatus('Nothing saved yet for this competition (data is saved after a load from ESPN).');return;}
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([st.csv],{type:'text/csv'}));a.download=nlKeyOf(lg)+'.csv';document.body.appendChild(a);a.click();a.remove();
 };
-// tell the user where the data came from
 const prevGo=document.getElementById('go').onclick;
 document.getElementById('go').onclick=async function(ev){
   window.__stor=null;
@@ -1945,7 +1900,6 @@ document.getElementById('go').onclick=async function(ev){
       :`Loaded from the CSV saved in this browser (${s.games} games, updated ${t}) – ESPN was not contacted.`);}}
 };
 
-/* ---------- click any column title to sort the table ---------- */
 const st=document.createElement('style');
 st.textContent='#tbl th,#stTbl th,#pkCard table th,#dotInfo table th,.hist table th{cursor:pointer;user-select:none}'+
  'th.sa::after{content:" ▲";font-size:9px}th.sd::after{content:" ▼";font-size:9px}'+
@@ -1957,7 +1911,7 @@ document.head.appendChild(st);
 function cellKey(td){
   const t=(td.dataset.sort!==undefined?td.dataset.sort:td.textContent).trim();
   const d=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);if(d)return +new Date(+d[3],+d[2]-1,+d[1]);
-  const lead=/^~?(-?\d+(?:\.\d+)?)\s*(?:%|[\/·]|$)/.exec(t);                 // 1.43 · 38% · "2.10 / 3.30 / 3.40" (first number)
+  const lead=/^~?(-?\d+(?:\.\d+)?)\s*(?:%|[\/·]|$)/.exec(t);
   if(lead)return +lead[1];
   return t.toLowerCase();
 }
@@ -1970,7 +1924,7 @@ document.addEventListener('click',e=>{
   rows.forEach((r,i)=>{if(r.dataset.oi===undefined)r.dataset.oi=i;});
   const idx=th.cellIndex,asc=!th.classList.contains('sa');
   [...hdr.cells].forEach(c=>c.classList.remove('sa','sd'));th.classList.add(asc?'sa':'sd');
-  const dateCol=tb.id==='tbl'&&idx===0;                                  // "Tue, 10 Nov 18:00" is not sortable as text: use the original (chronological) order
+  const dateCol=tb.id==='tbl'&&idx===0;
   const key=r=>dateCol?+r.dataset.oi:cellKey(r.cells[idx]||document.createElement('td'));
   rows.sort((a,b)=>{const x=key(a),y=key(b);let c;
     if(typeof x==='number'&&typeof y==='number')c=x-y;else if(typeof x==='number')c=-1;else if(typeof y==='number')c=1;else c=String(x).localeCompare(String(y),undefined,{numeric:true});
@@ -1978,7 +1932,6 @@ document.addEventListener('click',e=>{
   rows.forEach(r=>body.appendChild(r));
 });
 
-/* ---------- a 1/X/2 histogram of the nearest past games on every upcoming dot ---------- */
 const _ps=plotSelect;
 plotSelect=function(p){
   _ps(p);
@@ -1991,7 +1944,7 @@ plotSelect=function(p){
 })();
 </script>
 
-<!-- ===== ADD-ON 5: stadium map for national teams (venue taken from ESPN per match, so changed stadiums are picked up automatically) ===== -->
+<!-- ===== ADD-ON 5: stadium map for national teams ===== -->
 <script>
 (function(){
 const NTK=/^(WCQ[A-Z]|EUQ|FRI|WC|EURO|COPA|GOLD|AFCONQ?|ASIA|UNL_[A-D]\d)$/;
@@ -1999,7 +1952,6 @@ const prevShow=showMap;
 let RUN=0;
 const addDays=(d,n)=>new Date(d.getTime()+n*864e5);
 
-// venue (name + city) of every match, read from the ESPN scoreboard of the days around the fixtures
 async function venuesFor(slug,fixtures){
   const days=new Set();
   fixtures.forEach(f=>[-1,0,1].forEach(n=>days.add(ymd(addDays(f.date,n)))));
@@ -2019,7 +1971,6 @@ async function venuesFor(slug,fixtures){
   return out;
 }
 
-// coordinates of a venue: OpenStreetMap stadium first, then the city
 async function geoVenue(v){
   const key='ntv1:'+v.name+'|'+(v.city||''),hit=cacheGet(key,Infinity);
   if(hit)return hit;
@@ -2033,7 +1984,7 @@ async function geoVenue(v){
       if(b){const r={lat:+b.lat,lon:+b.lon,name:v.name,src:'ESPN venue + OpenStreetMap'};cacheSet(key,r);return r;}
     }catch(e){}
   }
-  if(v.city){                                   // stadium unknown to OSM: use the city
+  if(v.city){
     await nomPace();
     try{
       const j=await jfetch(base+encodeURIComponent(v.city+(v.country?', '+v.country:'')));
@@ -2063,7 +2014,7 @@ showMap=async function(fixtures){
   try{ven=await venuesFor(await espnSlug(lg),fixtures);}catch(e){}
   if(run!==RUN)return;
   const pts=[],missing=[];let done=0;
-  for(const f of fixtures){                       // sequential: Nominatim allows 1 request/second
+  for(const f of fixtures){
     const v=ven[f.HomeTeam+'|'+f.AwayTeam];
     if(!v){missing.push(f.HomeTeam+' – '+f.AwayTeam+': ESPN lists no venue yet');continue;}
     stat.textContent='Locating stadiums… '+(++done)+' / '+fixtures.length;
@@ -2092,9 +2043,9 @@ showMap=async function(fixtures){
 <script>
 (function(){
 let CUR=[],PAST=[],FIX=[],TITLE='';
-const _ss=setupScore;                                   // this season: every finished game
+const _ss=setupScore;
 setupScore=function(p,t){CUR=p.slice();TITLE=document.getElementById('league').selectedOptions[0].textContent;return _ss(p,t);};
-const _ak=analyseKNN;                                   // both seasons (games that have odds) + upcoming fixtures
+const _ak=analyseKNN;
 analyseKNN=function(f,past,...r){PAST=past.slice();FIX=f.slice();return _ak(f,past,...r);};
 
 const sel=document.createElement('select');sel.id='dlScope';
@@ -2125,6 +2076,51 @@ btn.onclick=()=>{
   document.body.appendChild(a);a.click();a.remove();
   setStatus(document.getElementById('status').textContent.split('\n')[0]+'\nDownloaded '+name+' ('+list.length+' played games'+(FIX.length?' + '+FIX.length+' upcoming':'')+').');
 };
+})();
+</script>
+
+<!-- ===== ADD-ON 7: highlight value bets in green in the Upcoming games table ===== -->
+<script>
+(function(){
+const TOL=0.05, MINN=20;   // same rule as the "Check a pick" card: odds within ±5%, at least 20 similar past games, hit rate × odd > 1
+const st=document.createElement('style');
+st.textContent='#tbl td.vb{background:var(--c1);color:#fff;font-weight:700}'+
+ '#tbl button.pk.vb{background:var(--c1);color:#fff;border-color:var(--c1)}'+
+ '#tbl button.pk.vb.on{outline:2px solid var(--ink)}';
+document.head.appendChild(st);
+
+function valueOf(res,it,k){
+  const odd=it.o[k],lo=odd*(1-TOL),hi=odd*(1+TOL);
+  let n=0,hits=0;
+  res.past.forEach((m,j)=>{const o=m.o[k];if(o>=lo&&o<=hi){n++;if(res.lab[j]===k)hits++;}});
+  if(n<MINN)return null;
+  const roi=hits/n*odd-1;
+  return roi>0?{n,hits,roi}:null;
+}
+function mark(res){
+  const t=document.getElementById('tbl');if(!t)return;
+  t.querySelectorAll('tr.up').forEach(tr=>{
+    const it=res.items[+tr.dataset.i];if(!it)return;
+    for(let k=0;k<3;k++){
+      const v=valueOf(res,it,k);if(!v)continue;
+      const td=tr.cells[2+k];
+      td.classList.add('vb');
+      td.title='Value bet: '+v.hits+' of '+v.n+' similar games, expected return +'+(v.roi*100).toFixed(1)+'%';
+      const b=tr.querySelector('button.pk[data-k="'+k+'"]');if(b)b.classList.add('vb');
+    }
+  });
+  const note=t.parentElement.nextElementSibling;
+  if(note&&!document.getElementById('vbLegend'))
+    note.insertAdjacentHTML('afterend','<p class="note" id="vbLegend"><span class="pill p1" style="min-width:0">green</span> odd = value bet: among past games with a similar odd (±5%, at least 20 games) the outcome came more often than the odd implies. Click the 1 / X / 2 button for the details.</p>');
+}
+function install(){
+  if(typeof render!=='function'){setTimeout(install,200);return;}
+  if(render.__vb)return;
+  const _render=render;
+  render=function(res){_render(res);mark(res);};
+  render.__vb=true;
+}
+if(document.readyState==='complete')install();else window.addEventListener('load',install);
 })();
 </script>
 </body>
